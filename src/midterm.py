@@ -17,7 +17,11 @@ from nltk.stem import WordNetLemmatizer
 from scipy import sparse
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeClassifier
+import xgboost as xgb
+from sklearn import datasets , linear_model
+from sklearn.preprocessing import StandardScaler
 
+from xgboost import XGBClassifier
 
 
 def get_small_dataset(number):
@@ -37,23 +41,66 @@ def get_test_index(data):
     target_data= data[data['Score'].isnull() == True] 
     return target_data
 
+
+# 找到电影最初的timestamp
+# 用户评价时的timestamp-电影最初的timestamp
+# 用户最初的timestamp
+
 def get_user_mean(data):
     # calculate each user's mean rating
     user_group = data.groupby('UserId')
+
     user_id = list(user_group.groups.keys())
-    user_mean_rating = user_group['Score'].agg([np.mean])
-    user_mean_rating = user_mean_rating.rename(columns={'mean': 'user_mean'})
-    user_mean_rating.to_csv('./data/user_rating.csv')
-    return user_mean_rating
+    user_time_min = user_group['Time'].agg([np.min])
+    user_time_max = user_group['Time'].agg([np.max])
+
+
+    user_time_min.to_csv('./data/features/USER_TMIN.csv')
+    user_time_max.to_csv('./data/features/USER_TMAX.csv')
+
+    # user_mean_rating = user_group['Score'].agg([np.min])
+    # user_mean_rating = user_mean_rating.rename(columns={'mean': 'user_mean'})
+    # user_mean_rating.to_csv('./data/features/USER_MIN.csv')
 
 def get_movie_mean(data):
     # calculate each movie's mean rating
     movie_group = data.groupby('ProductId')
     movie_id = list(movie_group.groups.keys())
-    movie_mean_rating = movie_group['Score'].agg([np.mean])
-    movie_mean_rating = movie_mean_rating.rename(columns={'mean': 'movie_mean'})
-    movie_mean_rating.to_csv('./data/movie.csv')
-    return movie_mean_rating
+
+    movie_time_min = movie_group['Time'].agg([np.min])
+    movie_time_max = movie_group['Time'].agg([np.max])
+
+    movie_time_min.to_csv('./data/features/MOVIE_TMIN.csv')
+    movie_time_max.to_csv('./data/features/MOVIE_TMAX.csv')
+
+    # movie_mean_rating = movie_group['Score'].agg([np.min])
+    # movie_mean_rating = movie_mean_rating.rename(columns={'mean': 'movie_max'})
+    # movie_mean_rating.to_csv('./data/features/SCR_MIN.csv')
+def merge_time_feature():
+    movie_min = pd.read_csv('./data/features/time/MOVIE_TMIN.csv', index_col = 0)
+    movie_min = movie_min.rename(columns={'amin':'MOVIE_MIN'})
+
+    movie_max = pd.read_csv('./data/features/time/MOVIE_TMAX.csv', index_col = 0)
+    movie_max= movie_max.rename(columns={'amax':'MOVIE_MAX'})
+
+    user_min = pd.read_csv('./data/features/time/USER_TMIN.csv', index_col = 0)
+    user_min = user_min.rename(columns={'amin':'USER_MIN'})
+
+    user_max = pd.read_csv('./data/features/time/USER_TMAX.csv', index_col = 0)
+    user_max = user_max.rename(columns={'amax':'USER_MAX'})
+
+    movie = pd.read_csv('./data/features/MOVIE.csv', index_col = 0)
+    movie = pd.merge(movie, movie_min, on = 'ProductId')
+    movie = pd.merge(movie, movie_max, on = 'ProductId')
+    movie.to_csv('./data/features/MOVIE_2.csv', index_label = 'Id')
+
+
+    user = pd.read_csv('./data/features/USER.csv', index_col = 0)
+    user = pd.merge(user, user_min, on = 'UserId')
+    user = pd.merge(user, user_max, on = 'UserId')
+
+
+    user.to_csv('./data/features/User_2.csv', index_label = 'Id')
 
 def get_new_data():
     data = pd.read_csv('./data/train.csv')
@@ -66,7 +113,7 @@ def get_new_data():
 
 def get_user_rating_preference():
     users = pd.read_csv('./data/user_rating.csv')
-    data = pd.read_csv('train_flag.csv')
+    data = pd.read_csv('train.csv')
 
     user_group = data.groupby('UserId')
 
@@ -86,6 +133,8 @@ def get_user_rating_preference():
     print(users.shape)
     
     users.to_csv('user.csv', index_label='Id')
+
+
 
 def process_summary():
     data = pd.read_csv('./data/train.csv', index_col = 0)
@@ -236,71 +285,74 @@ def data_prune(data):
 
     return data
 
+
 def train_idf_svd():
-    train = pd.read_csv('./data/Summary_train2.csv', index_col = 0)
-    # train = data_prune(train)
-    train = train.dropna(subset = ["Score"], axis = 0, how = 'any')
-    
+    train = pd.read_csv('mydata666.csv', index_col = 0)
+    train = train.dropna(axis = 0, how = 'any')
 
     label = train['Score'].astype('int')
     summary = train['Summary Word'].fillna(value = "")
-    vectorizer = TfidfVectorizer(stop_words='english', max_df= 0.5)
-    features = vectorizer.fit_transform(summary)
+    vector = TfidfVectorizer(max_df=0.9, stop_words='english')  
+    summary_vector = vector.fit_transform(summary)
+    joblib.dump(vector, 'vector.model')
+    # exit(0)
+    # feats_names = ["desc_" + x for x in vector.get_feature_names()]
+    # print(feats_names)
+    # exit(0)
+    #vectorizer = TfidfVectorizer(stop_words='english', max_df= 0.9)
+    # joblib.dump(vectorizer, 'vector.model')
 
-    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator']]
-    new_feature = sparse.hstack((features, other_features)).tocsr()
-    print(new_feature.shape)
+    #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator','Time','SUMMARY_LEN','TEXT_LEN','SURP','CAPS','Rate Flag','Summary Flag','USER_MEAN','RATE_NUM','MOVIE_MEAN','MOVIE_SCRMAX','MOVIE_SCRMIN','MOVIE_CREATED','MOVIE_TMAX','USER_SCRMAX','USER_SCRMIN','USER_DEV','USER_CREATED','USER_TMAX','USER_TIME','MOVIE_TIME']]
+    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN', 'SURP','CAPS', 'USER_DEV']]
+    stda = StandardScaler()  
+    other_features = stda.fit_transform(np.array(other_features))  
+    
+    new_feature = sparse.hstack((summary_vector, other_features)).tocsr()
 
-    x_train, x_test, y_train, y_test = train_test_split(features, label, test_size = 0.2)
+    x_train, x_test, y_train, y_test = train_test_split(new_feature, label, test_size = 0.2)
+    # lr = LogisticRegression(multi_class='multinomial', solver='lbfgs')
 
-    print(x_test.shape)
-    joblib.dump(vectorizer, 'vector2.model')
 
-    lr = LogisticRegression(multi_class='multinomial', solver='lbfgs')
-    lr.fit(features, label)
-    joblib.dump(lr, 'lr_123.model')
+    model = linear_model.LinearRegression()
+    model.fit(x_train, y_train)
 
-    # lr = joblib.load('lr_123.model')
+    joblib.dump(model, 'lr_123.model')
 
-    # print test acc and rmse
-    test_accuracy = lr.score(x_test, y_test)
+    test_accuracy = model.score(x_test, y_test)
     print('test', test_accuracy)
 
-    predict = lr.predict(x_test)
+    predict = model.predict(x_test)
     res = mean_squared_error(y_test, predict)
     print('msa', res)
 
-# train_idf_svd()
-# exit(0)
-
-
 
 def prediction():
-    # dev = pd.read_csv('./data/features/SCR_DEV.csv')
+    train = pd.read_csv('mydata666.csv', index_col = 0)
+    print(train.shape)
 
-    train = pd.read_csv('mydata.csv', index_col = 0)
-    # mydata = pd.merge(train, dev, on = 'Id')
-
-    # mydata.to_csv('mydata.csv')
-    # exit(0)
-
-    summary = train[['HelpfulnessNumerator', 'HelpfulnessDenominator', 'user_preference','user_mean', 'movie_mean', 'Time', 'Summary len', 'Text len', 'CAPS', 'SURP']].fillna(value=0)
-    
     test = pd.read_csv('./data/test.csv')
-    summary = summary.loc[test['Id']]
-    # vectorizer = joblib.load('vector2.model')
-    # features = vectorizer.transform(summary) 
- 
-    features = summary
+    test_data = train.loc[test['Id']]
 
-    model = joblib.load("randomForest2.model")
+    summary = test_data['Summary Word'].fillna(value="")
+    vector = joblib.load('vector.model')
+    summary_vector = vector.transform(summary)
+    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN', 'SURP','CAPS', 'USER_DEV']].fillna(value=0)
+    stda = StandardScaler()  
+    other_features = stda.fit_transform(np.array(other_features))  
+    
+    features = sparse.hstack((summary_vector, other_features)).tocsr()
+    #features = test_data[['SUMMARY_LEN', 'TEXT_LEN', 'SURP', 'CAPS','HelpfulnessDenominator','HelpfulnessNumerator','Time', 'USER_TIME','MOVIE_TIME', 'USER_MEAN', 'MOVIE_MEAN', 'USER_DEV', 'MOVIE_SCRMAX','MOVIE_SCRMIN', 'USER_SCRMIN', 'USER_SCRMAX']].fillna(value=0)
+
+    model = joblib.load("lr_123.model")
     score = model.predict(features)
 
     test['Score'] = score.astype('float')
 
-    test.to_csv('res_last_try_today.csv', index = 0)
+    test.to_csv('res1.csv', index = 0)
     return test['Score']
-# prediction()
+prediction()
+exit(0)
+
 
 
 # question = text.apply(lambda x: len(re.findall(r'[?]',x)))
@@ -308,28 +360,30 @@ def prediction():
 # print(question.head())
 # print(surprise.head())
 
-
-train = pd.read_csv('mydata777.csv', index_col = 0)
+train = pd.read_csv('mydata666.csv', index_col = 0)
 train = train.dropna(axis = 0, how = 'any')
 
-features = train[['HelpfulnessNumerator', 'HelpfulnessDenominator', 'user_preference', 'user_mean', 'movie_mean', 'Time', 'Summary len', 'Text len','CAPS', 'SURP']]
+features = train[['SUMMARY_LEN', 'TEXT_LEN', 'SURP', 'CAPS','HelpfulnessDenominator','HelpfulnessNumerator','Time', 'USER_TIME','MOVIE_TIME', 'USER_MEAN', 'MOVIE_MEAN', 'USER_DEV', 'MOVIE_SCRMAX','MOVIE_SCRMIN', 'USER_SCRMIN', 'USER_SCRMAX']]
 
 label = train[['Score']].astype('int')
-
 x_train, x_test, y_train, y_test = train_test_split(features, label, test_size = 0.2)
-classifier = DecisionTreeClassifier(max_depth=100)
 
-
-# classifier = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
+classifier = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
 classifier.fit(x_train, y_train)
 
-# joblib.dump(classifier, 'randomForest2.model')
+joblib.dump(classifier, 'randomForest2.model')
+importances = classifier.feature_importances_
+indices = np.argsort(importances)[::-1]
+
+features_label = train.columns[1:]
+for f in range(x_train.shape[1]):
+    print("%2d) %-*s %f" % (f + 1, 30, features_label[indices[f]], importances[indices[f]]))
 
 test_accuracy = classifier.score(x_test, y_test)
 print('test', test_accuracy)
 
 predict = classifier.predict(x_test)
-res = mean_squared_error(y_test, predict)
+res = mean_squared_error(y_test, predict, squared=False)
 print('msa', res)
 
 
