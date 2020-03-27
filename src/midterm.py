@@ -303,7 +303,7 @@ def train_idf_svd():
     # joblib.dump(vectorizer, 'vector.model')
 
     #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator','Time','SUMMARY_LEN','TEXT_LEN','SURP','CAPS','Rate Flag','Summary Flag','USER_MEAN','RATE_NUM','MOVIE_MEAN','MOVIE_SCRMAX','MOVIE_SCRMIN','MOVIE_CREATED','MOVIE_TMAX','USER_SCRMAX','USER_SCRMIN','USER_DEV','USER_CREATED','USER_TMAX','USER_TIME','MOVIE_TIME']]
-    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN', 'SURP','CAPS', 'USER_DEV']]
+    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV']]
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
@@ -336,7 +336,7 @@ def prediction():
     summary = test_data['Summary Word'].fillna(value="")
     vector = joblib.load('vector.model')
     summary_vector = vector.transform(summary)
-    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN', 'SURP','CAPS', 'USER_DEV']].fillna(value=0)
+    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV']].fillna(value=0)
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
@@ -348,12 +348,53 @@ def prediction():
 
     test['Score'] = score.astype('float')
 
-    test.to_csv('res1.csv', index = 0)
-    return test['Score']
+    test['Score'][test['Score'] <= 0] = 1.0
+    # test['Score'][test['Score'] > 5] = 5.0
+    
+    # test_data['Predict']= test['Score']
+
+
+    # test = pd.merge(test, check_update(test_data)['Predict'], on = 'Id')
+
+    # test.to_csv('res_compare.csv', index = 0)
+
+    # test = test.drop(['Score'], axis=1)
+    # test = test.rename(columns={'Predict':'Score'})
+    test.to_csv('submit1111.csv', index = 0)
+
+
+def check_update(data):
+    '''
+        data:score, dev, user_mean, movie_mean, HelpfulnessDenominator, HelpfulnessNumerator)
+    '''
+    #data['Predict'] = data['Predict'].apply(lambda x: [wnl.lemmatize(item) for item in x if item not in stop_words])
+    for index, row in data.iterrows():
+        predict_score = row['Predict']
+        movie_mean = row['MOVIE_MEAN']
+        user_mean = row['USER_MEAN']
+        user_dev = row['USER_DEV']
+        agree = row['HelpfulnessNumerator']
+        total = row['HelpfulnessDenominator']
+
+        # 如果大部分人不认同某个用户的评分, 说明他的评分与大众审美相反
+        if total > 1 and agree / total < 0.5 and user_dev < 1:
+            if movie_mean >= 4 :
+                if predict_score == 1 or predict_score == 2:
+                    row['Predict'] = 5 - row['Predict']
+            elif movie_mean == 3:
+                if predict_score == 5 or predict_score == 1:
+                    row['Predict'] = abs(predict_score - movie_mean)
+            else:
+                if predict_score == 3 or predict_score == 4:
+                    row['Predict'] = 5 - row['Predict']
+                elif predict_score == 5:
+                    row['Predict'] = 1
+    
+    print(data['Predict'].head())
+    return data
+
 prediction()
 exit(0)
-
-
 
 # question = text.apply(lambda x: len(re.findall(r'[?]',x)))
 # surprise = text.apply(lambda x: len(re.findall(r'[!]',x)))
