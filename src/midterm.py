@@ -22,7 +22,7 @@ from sklearn import datasets , linear_model
 from sklearn.preprocessing import StandardScaler
 
 from xgboost import XGBClassifier
-
+from sklearn.tree import DecisionTreeClassifier
 
 def get_small_dataset(number):
     '''
@@ -285,7 +285,7 @@ def data_prune(data):
 
     return data
 
-
+from sklearn.naive_bayes import GaussianNB
 def train_idf_svd():
     train = pd.read_csv('mydata666.csv', index_col = 0)
     train = train.dropna(axis = 0, how = 'any')
@@ -295,7 +295,7 @@ def train_idf_svd():
     vector = TfidfVectorizer(max_df=0.9, stop_words='english')  
     summary_vector = vector.fit_transform(summary)
     joblib.dump(vector, 'vector.model')
-    # exit(0)
+
     # feats_names = ["desc_" + x for x in vector.get_feature_names()]
     # print(feats_names)
     # exit(0)
@@ -303,7 +303,8 @@ def train_idf_svd():
     # joblib.dump(vectorizer, 'vector.model')
 
     #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator','Time','SUMMARY_LEN','TEXT_LEN','SURP','CAPS','Rate Flag','Summary Flag','USER_MEAN','RATE_NUM','MOVIE_MEAN','MOVIE_SCRMAX','MOVIE_SCRMIN','MOVIE_CREATED','MOVIE_TMAX','USER_SCRMAX','USER_SCRMIN','USER_DEV','USER_CREATED','USER_TMAX','USER_TIME','MOVIE_TIME']]
-    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV']]
+    #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'Rate Flag','Summary Flag', 'RATE_NUM']]
+    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator']]
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
@@ -312,11 +313,9 @@ def train_idf_svd():
     x_train, x_test, y_train, y_test = train_test_split(new_feature, label, test_size = 0.2)
     # lr = LogisticRegression(multi_class='multinomial', solver='lbfgs')
 
-
     model = linear_model.LinearRegression()
     model.fit(x_train, y_train)
-
-    joblib.dump(model, 'lr_123.model')
+    # joblib.dump(model, 'lr_123.model')
 
     test_accuracy = model.score(x_test, y_test)
     print('test', test_accuracy)
@@ -324,6 +323,7 @@ def train_idf_svd():
     predict = model.predict(x_test)
     res = mean_squared_error(y_test, predict)
     print('msa', res)
+
 
 
 def prediction():
@@ -336,7 +336,7 @@ def prediction():
     summary = test_data['Summary Word'].fillna(value="")
     vector = joblib.load('vector.model')
     summary_vector = vector.transform(summary)
-    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV']].fillna(value=0)
+    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'Rate Flag','Summary Flag', 'RATE_NUM']].fillna(value=0)
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
@@ -346,21 +346,20 @@ def prediction():
     model = joblib.load("lr_123.model")
     score = model.predict(features)
 
-    test['Score'] = score.astype('float')
+    test['Score'] = score
 
     test['Score'][test['Score'] <= 0] = 1.0
-    # test['Score'][test['Score'] > 5] = 5.0
+    test['Score'][test['Score'] > 5] = 5.0
     
-    # test_data['Predict']= test['Score']
 
+    #test_data['Predict'] = test_data.apply(lambda x : 5 - x['Predict'] if (x['HelpfulnessDenominator'] != 0 and x['HelpfulnessNumerator'] / x['HelpfulnessDenominator'] < 0.5 and x['USER_DEV'] < 1) else x['Predict'])
 
-    # test = pd.merge(test, check_update(test_data)['Predict'], on = 'Id')
+    # test_data['Predict'] = test_data.apply(lambda x : x['HelpfulnessDenominator'])
+    # exit(0)
+    # test['Score'] = test_data['Predict']
 
-    # test.to_csv('res_compare.csv', index = 0)
+    test.to_csv('submit1234.csv', index = 0)
 
-    # test = test.drop(['Score'], axis=1)
-    # test = test.rename(columns={'Predict':'Score'})
-    test.to_csv('submit1111.csv', index = 0)
 
 
 def check_update(data):
@@ -393,8 +392,6 @@ def check_update(data):
     print(data['Predict'].head())
     return data
 
-prediction()
-exit(0)
 
 # question = text.apply(lambda x: len(re.findall(r'[?]',x)))
 # surprise = text.apply(lambda x: len(re.findall(r'[!]',x)))
@@ -412,7 +409,7 @@ x_train, x_test, y_train, y_test = train_test_split(features, label, test_size =
 classifier = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
 classifier.fit(x_train, y_train)
 
-joblib.dump(classifier, 'randomForest2.model')
+# joblib.dump(classifier, 'randomForest2.model')
 importances = classifier.feature_importances_
 indices = np.argsort(importances)[::-1]
 
