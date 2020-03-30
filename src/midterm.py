@@ -20,9 +20,11 @@ from sklearn.tree import DecisionTreeClassifier
 import xgboost as xgb
 from sklearn import datasets , linear_model
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.ensemble import VotingClassifier
 from xgboost import XGBClassifier
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+
 
 def get_small_dataset(number):
     '''
@@ -67,15 +69,32 @@ def get_movie_mean(data):
     movie_group = data.groupby('ProductId')
     movie_id = list(movie_group.groups.keys())
 
-    movie_time_min = movie_group['Time'].agg([np.min])
-    movie_time_max = movie_group['Time'].agg([np.max])
+    movie_time_sum1 = movie_group['HelpfulnessNumerator'].agg([np.sum])
+    movie_time_sum2 = movie_group['HelpfulnessDenominator'].agg([np.sum])
 
-    movie_time_min.to_csv('./data/features/MOVIE_TMIN.csv')
-    movie_time_max.to_csv('./data/features/MOVIE_TMAX.csv')
+    movie_time_sum1.to_csv('./data/features/MOVIE_1.csv')
+    movie_time_sum1.to_csv('./data/features/MOVIE_2.csv')
 
+
+    movie = pd.read_csv('./data/features/movie.csv', index_col=0)
+
+    movie = pd.merge(movie_time_sum1, movie, on='ProductId')
+    movie = pd.merge(movie, movie_time_sum2, on = 'ProductId')
+
+
+    help1 = data['HelpfulnessNumerator']
+    help2 = data['HelpfulnessDenominator']
+
+    movie['ratio1'] = help1 / movie['sum_x']
+    movie['ratio2'] = help2 / movie['sum_y']
+
+        
+    movie.to_csv('./data/features/movie1.csv', index_label='Id')
     # movie_mean_rating = movie_group['Score'].agg([np.min])
     # movie_mean_rating = movie_mean_rating.rename(columns={'mean': 'movie_max'})
     # movie_mean_rating.to_csv('./data/features/SCR_MIN.csv')
+
+
 def merge_time_feature():
     movie_min = pd.read_csv('./data/features/time/MOVIE_TMIN.csv', index_col = 0)
     movie_min = movie_min.rename(columns={'amin':'MOVIE_MIN'})
@@ -137,16 +156,19 @@ def get_user_rating_preference():
 
 
 def process_summary():
-    data = pd.read_csv('./data/train.csv', index_col = 0)
+    data = pd.read_csv('text.csv', index_col = 0)
 
-    data['Summary'] = data['Summary'].str.replace("[^a-zA-Z#]", " ")
-    data['Summary'] = data['Summary'].fillna(' ')
-    data['Summary'] = data['Summary'].apply(lambda x: ' '.join([w for w in x.split() if len(w)>2]))
-    data['Summary'] = data['Summary'].apply(lambda x: x.lower())
+    # data['Text'] = data['Text'].str.replace("[^a-zA-Z#]", " ")
+    data['Text'] = data['Text'].fillna(' ')
+    # data['Text'] = data['Text'].apply(lambda x: ' '.join([w for w in x.split() if len(w)>2]))
+    # data['Text'] = data['Text'].apply(lambda x: x.lower())
 
+    # data['Text'].to_csv('text.csv', index_label ='Id')
+
+    # exit(0)
     stop_words = stopwords.words('english')
 
-    tokens = data['Summary'].apply(lambda x: x.split())
+    tokens = data['Text'].apply(lambda x: x.split())
     wnl = WordNetLemmatizer() 
     tokens = tokens.apply(lambda x: [wnl.lemmatize(item) for item in x if item not in stop_words])
 
@@ -155,16 +177,16 @@ def process_summary():
         t = ' '.join(tokens[i])
         detokens.append(t)
 
-    data['Summary Word'] = detokens
+    data['Text Word'] = detokens
     
 
     score = data['Score']
-    new_data = pd.merge(data['Summary Word'], score, on = 'Id')
-    new_data = pd.merge(data['HelpfulnessNumerator'], new_data, on = 'Id')
-    new_data = pd.merge(data['HelpfulnessDenominator'], new_data, on = 'Id')
+    new_data = pd.merge(data['Text Word'], score, on = 'Id')
+    # new_data = pd.merge(data['HelpfulnessNumerator'], new_data, on = 'Id')
+    # new_data = pd.merge(data['HelpfulnessDenominator'], new_data, on = 'Id')
 
     print(new_data.shape)
-    new_data.to_csv('./data/Summary_train2.csv')
+    new_data.to_csv('./data/text_words.csv')
 
 def add_flag():
     train = pd.read_csv('./data/train.csv', index_col = 0)
@@ -280,14 +302,11 @@ def data_prune(data):
     data = data[data['user_preference'] < 1.0]
     data = data[data['HelpfulnessNumerator'] > 0]
     data = data.dropna(subset = ["Score"], axis = 0, how = 'any')
-
     print(data.shape)
-
     return data
 
-from sklearn.naive_bayes import GaussianNB
 def train_idf_svd():
-    train = pd.read_csv('mydata666.csv', index_col = 0)
+    train = pd.read_csv('mydata888.csv', index_col = 0)
     train = train.dropna(axis = 0, how = 'any')
 
     label = train['Score'].astype('int')
@@ -298,22 +317,22 @@ def train_idf_svd():
 
     # feats_names = ["desc_" + x for x in vector.get_feature_names()]
     # print(feats_names)
-    # exit(0)
+
     #vectorizer = TfidfVectorizer(stop_words='english', max_df= 0.9)
     # joblib.dump(vectorizer, 'vector.model')
 
     #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator','Time','SUMMARY_LEN','TEXT_LEN','SURP','CAPS','Rate Flag','Summary Flag','USER_MEAN','RATE_NUM','MOVIE_MEAN','MOVIE_SCRMAX','MOVIE_SCRMIN','MOVIE_CREATED','MOVIE_TMAX','USER_SCRMAX','USER_SCRMIN','USER_DEV','USER_CREATED','USER_TMAX','USER_TIME','MOVIE_TIME']]
-    #other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'Rate Flag','Summary Flag', 'RATE_NUM']]
-    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator']]
+    other_features = train[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'RATE_NUM', 'ratio1', 'ratio2']]
+
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
     new_feature = sparse.hstack((summary_vector, other_features)).tocsr()
 
     x_train, x_test, y_train, y_test = train_test_split(new_feature, label, test_size = 0.2)
-    # lr = LogisticRegression(multi_class='multinomial', solver='lbfgs')
 
-    model = linear_model.LinearRegression()
+    model = RandomForestRegressor(n_estimators=50,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
+    #model = linear_model.LinearRegression()
     model.fit(x_train, y_train)
     # joblib.dump(model, 'lr_123.model')
 
@@ -324,42 +343,31 @@ def train_idf_svd():
     res = mean_squared_error(y_test, predict)
     print('msa', res)
 
-
-
+train_idf_svd()
+exit(0)
 def prediction():
-    train = pd.read_csv('mydata666.csv', index_col = 0)
+    train = pd.read_csv('mydata888.csv', index_col = 0)
     print(train.shape)
-
     test = pd.read_csv('./data/test.csv')
     test_data = train.loc[test['Id']]
 
     summary = test_data['Summary Word'].fillna(value="")
     vector = joblib.load('vector.model')
     summary_vector = vector.transform(summary)
-    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'Rate Flag','Summary Flag', 'RATE_NUM']].fillna(value=0)
+    other_features = test_data[['HelpfulnessDenominator','HelpfulnessNumerator', 'MOVIE_MEAN','USER_MEAN',  'USER_DEV', 'Time', 'RATE_NUM', 'ratio1', 'ratio2']].fillna(value=0)
     stda = StandardScaler()  
     other_features = stda.fit_transform(np.array(other_features))  
     
     features = sparse.hstack((summary_vector, other_features)).tocsr()
-    #features = test_data[['SUMMARY_LEN', 'TEXT_LEN', 'SURP', 'CAPS','HelpfulnessDenominator','HelpfulnessNumerator','Time', 'USER_TIME','MOVIE_TIME', 'USER_MEAN', 'MOVIE_MEAN', 'USER_DEV', 'MOVIE_SCRMAX','MOVIE_SCRMIN', 'USER_SCRMIN', 'USER_SCRMAX']].fillna(value=0)
 
     model = joblib.load("lr_123.model")
     score = model.predict(features)
 
     test['Score'] = score
-
-    test['Score'][test['Score'] <= 0] = 1.0
+    test['Score'][test['Score'] <= 1] = 1.0
     test['Score'][test['Score'] > 5] = 5.0
-    
 
-    #test_data['Predict'] = test_data.apply(lambda x : 5 - x['Predict'] if (x['HelpfulnessDenominator'] != 0 and x['HelpfulnessNumerator'] / x['HelpfulnessDenominator'] < 0.5 and x['USER_DEV'] < 1) else x['Predict'])
-
-    # test_data['Predict'] = test_data.apply(lambda x : x['HelpfulnessDenominator'])
-    # exit(0)
-    # test['Score'] = test_data['Predict']
-
-    test.to_csv('submit1234.csv', index = 0)
-
+    test.to_csv('submit000.csv',index=0)
 
 
 def check_update(data):
@@ -392,30 +400,42 @@ def check_update(data):
     print(data['Predict'].head())
     return data
 
-
 # question = text.apply(lambda x: len(re.findall(r'[?]',x)))
 # surprise = text.apply(lambda x: len(re.findall(r'[!]',x)))
 # print(question.head())
 # print(surprise.head())
 
-train = pd.read_csv('mydata666.csv', index_col = 0)
+train = pd.read_csv('mydata888.csv', index_col = 0)
 train = train.dropna(axis = 0, how = 'any')
 
-features = train[['SUMMARY_LEN', 'TEXT_LEN', 'SURP', 'CAPS','HelpfulnessDenominator','HelpfulnessNumerator','Time', 'USER_TIME','MOVIE_TIME', 'USER_MEAN', 'MOVIE_MEAN', 'USER_DEV', 'MOVIE_SCRMAX','MOVIE_SCRMIN', 'USER_SCRMIN', 'USER_SCRMAX']]
+summary = train['Summary Word']
+vector = joblib.load('vector.model')
+summary_vector = vector.transform(summary)
+
+other_features = train[['SUMMARY_LEN', 'TEXT_LEN', 'SURP', 'CAPS','HelpfulnessDenominator','HelpfulnessNumerator','Time', 'USER_TIME','MOVIE_TIME', 'USER_MEAN', 'MOVIE_MEAN', 'USER_DEV', 'MOVIE_SCRMAX_x','MOVIE_SCRMIN_x', 'USER_SCRMIN', 'USER_SCRMAX', 'ratio1', 'ratio2']]
+
+stda = StandardScaler()  
+other_features = stda.fit_transform(np.array(other_features))  
+new_feature = sparse.hstack((summary_vector, other_features)).tocsr()
 
 label = train[['Score']].astype('int')
-x_train, x_test, y_train, y_test = train_test_split(features, label, test_size = 0.2)
+x_train, x_test, y_train, y_test = train_test_split(new_feature, label, test_size = 0.2)
 
-classifier = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
+# classifier = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
+clf1 = LogisticRegression(multi_class='multinomial', random_state=1)
+clf2 = RandomForestRegressor(n_estimators=100,verbose=2,n_jobs=20,min_samples_split=5,random_state=1034324)
+clf3 = linear_model.LinearRegression()
+
+classifier = VotingClassifier(voting='soft', estimators=[('rf', clf2), ('lr', clf1), ('linear'), clf3])
 classifier.fit(x_train, y_train)
 
-# joblib.dump(classifier, 'randomForest2.model')
+joblib.dump(classifier, 'voting.model')
 importances = classifier.feature_importances_
 indices = np.argsort(importances)[::-1]
 
-features_label = train.columns[1:]
-for f in range(x_train.shape[1]):
-    print("%2d) %-*s %f" % (f + 1, 30, features_label[indices[f]], importances[indices[f]]))
+# features_label = train.columns[1:]
+# for f in range(x_train.shape[1]):
+#     print("%2d) %-*s %f" % (f + 1, 30, features_label[indices[f]], importances[indices[f]]))
 
 test_accuracy = classifier.score(x_test, y_test)
 print('test', test_accuracy)
@@ -423,5 +443,7 @@ print('test', test_accuracy)
 predict = classifier.predict(x_test)
 res = mean_squared_error(y_test, predict, squared=False)
 print('msa', res)
+
+prediction(classifier)
 
 
